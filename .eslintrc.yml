@@ -11,3 +11,5 @@ plugins:
   - '@typescript-eslint'
 rules:
   no-console: off
+  default-case: off
+  max-len: off
