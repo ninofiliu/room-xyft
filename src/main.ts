@@ -1,3 +1,4 @@
+import { getBpm, getKickProgression } from './bpm';
 import getSource from './getSource';
 
 (async () => {
@@ -18,11 +19,17 @@ import getSource from './getSource';
   document.body.style.overflow = 'hidden';
   document.body.style.margin = '0';
   document.body.append(canvas);
+  const ctx = canvas.getContext('2d');
 
   const animate = () => {
     analyser.getByteFrequencyData(fft);
     analyser.getByteTimeDomainData(wave);
-    const volume = wave.map((e) => (e - 128) / 128).reduce((sum, e) => sum + e, 0);
+    const volume = wave
+      .map((e) => (e - 128) / 128)
+      .reduce((sum, e) => sum + e, 0);
+    const kp = getKickProgression();
+    const bpm = getBpm();
+
     requestAnimationFrame(animate);
   };
   animate();
