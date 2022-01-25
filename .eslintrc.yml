@@ -13,3 +13,4 @@ rules:
   no-console: off
   default-case: off
   max-len: off
+  no-plusplus: off

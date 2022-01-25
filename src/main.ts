@@ -30,13 +30,29 @@ type Src =
   const source = await (src ? getMediaSource(ac, src) : getMicrophoneSource(ac));
 
   const analyser = ac.createAnalyser();
-  analyser.fftSize = 64;
-  const fft = new Float32Array(analyser.frequencyBinCount);
+  analyser.fftSize = 512;
+  const fft = new Uint8Array(analyser.frequencyBinCount);
   source.connect(analyser);
 
+  const canvas = document.createElement('canvas');
+  const width = window.innerWidth;
+  const height = window.innerHeight;
+  canvas.width = width;
+  canvas.height = height;
+  document.body.style.overflow = 'hidden';
+  document.body.style.margin = '0';
+  document.body.append(canvas);
+  const ctx = canvas.getContext('2d');
+
+  let xi = 0;
+  const yh = height / fft.length;
   const animate = () => {
-    analyser.getFloatFrequencyData(fft);
-    console.log(fft.reduce((sum, v) => sum + v, 0));
+    analyser.getByteFrequencyData(fft);
+    for (let yi = 0; yi < fft.length; yi++) {
+      ctx.fillStyle = `hsl(${fft[yi] - 120}, 100%, 50%)`;
+      ctx.fillRect(xi % width, yi * yh, 1, yh);
+    }
+    xi++;
     requestAnimationFrame(animate);
   };
   animate();
