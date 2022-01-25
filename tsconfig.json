@@ -1,6 +1,8 @@
 {
   "compilerOptions": {
-    "types": [],
-    "lib": ["ESNext", "DOM"]
+    "downlevelIteration": true,
+    "lib": ["ESNext", "DOM"],
+    "module": "ESNext",
+    "types": []
   }
 }
