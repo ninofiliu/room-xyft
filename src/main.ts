@@ -1,44 +1,22 @@
 import { getBpm, getKickProgression } from './bpm';
 import getSource from './getSource';
+import { cropAndBlur, loadImage } from './img';
 
 import { addTexture, setTextureImage, webglSetup } from './webgl';
 
-const loadImage = async (src: string) => {
-  const image = new Image();
-  image.src = src;
-  await new Promise((r) => {
-    image.onload = r;
-  });
-  return image;
-};
-
-const crop = (
-  image: HTMLImageElement,
-  width: number,
-  height: number,
-  blur: number
-) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  ctx.filter = `blur(${blur}px)`;
-  if (image.width / image.height > width / height) {
-    const sw = (image.height * width) / height;
-    const sx = (image.width - sw) / 2;
-    ctx.drawImage(image, sx, 0, sw, image.height, 0, 0, width, height);
-  } else {
-    const sh = (image.width * height) / width;
-    const sy = (image.height - sh) / 2;
-    ctx.drawImage(image, 0, sy, image.width, sh, 0, 0, width, height);
+const getMaxFreq = (fft: Uint8Array) => {
+  let maxI = 0;
+  let maxFreq = fft[0];
+  for (let i = 1; i < fft.length; i++) {
+    if (fft[i] > maxFreq) {
+      maxI = i;
+      maxFreq = fft[i];
+    }
   }
-  ctx.filter = '';
-  return ctx.getImageData(0, 0, width, height);
+  return maxI / fft.length;
 };
 
 (async () => {
-  const offset = { x: 1.0, y: 1.0 };
-  const force = 1.3;
   const blur = 0;
 
   const ac = new AudioContext();
@@ -46,6 +24,7 @@ const crop = (
 
   const analyser = ac.createAnalyser();
   analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0.97;
   const fft = new Uint8Array(analyser.frequencyBinCount);
   const wave = new Uint8Array(analyser.frequencyBinCount);
   source.connect(analyser);
@@ -68,7 +47,7 @@ const crop = (
   const srcImages = await Promise.all(
     [...Array(9).keys()].map((i) => loadImage(`/images/${i}.jpg`))
   );
-  const dstIDs = srcImages.map((img) => crop(img, width, height, blur));
+  const dstIDs = srcImages.map((img) => cropAndBlur(img, width, height, blur));
 
   addTexture(gl, 0, gl.getUniformLocation(program, 'u_image_0'));
   addTexture(gl, 1, gl.getUniformLocation(program, 'u_image_1'));
@@ -77,11 +56,11 @@ const crop = (
 
   let step = 0;
   let srcStep = 0;
-  const maxSrcStep = 100;
+  const maxSrcStep = 1000;
   let srcImage0 = srcImages[~~(Math.random() * srcImages.length)];
   let srcImage1 = srcImages[~~(Math.random() * srcImages.length)];
   let dstStep = 0;
-  const maxDstStep = 60;
+  const maxDstStep = 600;
   let dstID0 = dstIDs[~~(Math.random() * dstIDs.length)];
   let dstID1 = dstIDs[~~(Math.random() * dstIDs.length)];
 
@@ -102,22 +81,25 @@ const crop = (
   const animate = () => {
     analyser.getByteFrequencyData(fft);
     analyser.getByteTimeDomainData(wave);
-    const volume = wave
-      .map((e) => (e - 128) / 128)
-      .reduce((sum, e) => sum + e, 0);
+    const volume = wave.reduce(
+      (sum, e) => sum + Math.abs((e - 128) / 128) ** 2,
+      0
+    );
+    const fftVolume = fft.reduce((sum, e) => sum + (e / 256) ** 2, 0);
     const kp = getKickProgression();
     const bpm = getBpm();
+    const maxFreq = getMaxFreq(fft);
 
     gl.uniform2f(
       gl.getUniformLocation(program, 'u_offset'),
-      offset.x,
-      offset.y
+      Math.cos(0.5 * fftVolume),
+      Math.sin(0.5 * fftVolume)
     );
-    gl.uniform1f(gl.getUniformLocation(program, 'u_force'), force);
+    gl.uniform1f(gl.getUniformLocation(program, 'u_force'), 1.5);
     gl.uniform1f(gl.getUniformLocation(program, 'u_time'), step / 60);
 
     if (srcStep === 0) setNewSrc();
-    const srcMix = (srcStep / maxSrcStep) ** 4;
+    const srcMix = srcStep / maxSrcStep;
     gl.uniform1f(gl.getUniformLocation(program, 'u_mix_src'), srcMix);
     srcStep = (srcStep + 1) % maxSrcStep;
 
