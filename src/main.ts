@@ -4,6 +4,12 @@ import { cropAndBlur, loadImage } from './img';
 
 import { addTexture, setTextureImage, webglSetup } from './webgl';
 
+const FFT_SIZE = 512;
+const FFT_SMOOTHING_CONSTANT = 0.95;
+const MAX_SRC_STEP = 1000;
+const MAX_DST_STEP = 600;
+const FORCE = 1.5;
+
 const getMaxFreq = (fft: Uint8Array) => {
   let maxI = 0;
   let maxFreq = fft[0];
@@ -21,10 +27,14 @@ const getMaxFreq = (fft: Uint8Array) => {
 
   const ac = new AudioContext();
   const source = await getSource(ac, null);
+  const video = document.createElement('video');
+  video.autoplay = true;
+  video.muted = true;
+  video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
 
   const analyser = ac.createAnalyser();
-  analyser.fftSize = 512;
-  analyser.smoothingTimeConstant = 0.97;
+  analyser.fftSize = FFT_SIZE;
+  analyser.smoothingTimeConstant = FFT_SMOOTHING_CONSTANT;
   const fft = new Uint8Array(analyser.frequencyBinCount);
   const wave = new Uint8Array(analyser.frequencyBinCount);
   source.connect(analyser);
@@ -36,6 +46,7 @@ const getMaxFreq = (fft: Uint8Array) => {
   canvas.height = height;
   document.body.style.overflow = 'hidden';
   document.body.style.margin = '0';
+  document.body.style.transform = 'scaleX(-1)';
   document.body.append(canvas);
 
   const { gl, program } = await webglSetup(
@@ -56,11 +67,9 @@ const getMaxFreq = (fft: Uint8Array) => {
 
   let step = 0;
   let srcStep = 0;
-  const maxSrcStep = 1000;
   let srcImage0 = srcImages[~~(Math.random() * srcImages.length)];
   let srcImage1 = srcImages[~~(Math.random() * srcImages.length)];
   let dstStep = 0;
-  const maxDstStep = 600;
   let dstID0 = dstIDs[~~(Math.random() * dstIDs.length)];
   let dstID1 = dstIDs[~~(Math.random() * dstIDs.length)];
 
@@ -92,21 +101,21 @@ const getMaxFreq = (fft: Uint8Array) => {
 
     gl.uniform2f(
       gl.getUniformLocation(program, 'u_offset'),
-      Math.cos(0.5 * fftVolume),
-      Math.sin(0.5 * fftVolume)
+      Math.cos(0.1 * fftVolume),
+      Math.sin(0.1 * fftVolume)
     );
-    gl.uniform1f(gl.getUniformLocation(program, 'u_force'), 1.5);
+    gl.uniform1f(gl.getUniformLocation(program, 'u_force'), FORCE);
     gl.uniform1f(gl.getUniformLocation(program, 'u_time'), step / 60);
 
     if (srcStep === 0) setNewSrc();
-    const srcMix = srcStep / maxSrcStep;
+    const srcMix = srcStep / MAX_SRC_STEP;
     gl.uniform1f(gl.getUniformLocation(program, 'u_mix_src'), srcMix);
-    srcStep = (srcStep + 1) % maxSrcStep;
+    srcStep = (srcStep + 1) % MAX_SRC_STEP;
 
     if (dstStep === 0) setNewDst();
-    const dstMix = dstStep / maxDstStep;
+    const dstMix = dstStep / MAX_DST_STEP;
     gl.uniform1f(gl.getUniformLocation(program, 'u_mix_dst'), dstMix);
-    dstStep = (dstStep + 1) % maxDstStep;
+    dstStep = (dstStep + 1) % MAX_DST_STEP;
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     step++;
