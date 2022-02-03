@@ -1,5 +1,6 @@
 import getSource from './getSource';
 import { cropAndBlur, loadImage } from './img';
+import srcs from './srcs';
 
 import { addTexture, setTextureImage, webglSetup } from './webgl';
 
@@ -7,9 +8,11 @@ type Stream = { kind: 'image'; index: number } | { kind: 'webcam' };
 
 const FFT_SIZE = 512;
 const FFT_SMOOTHING_CONSTANT = 0.95;
-const MAX_STEP = 1000;
-const FORCE = 1.5;
+const MAX_STEP = 200;
+const FORCE = 1;
 const BLUR = 0;
+const PROB_CAM_SRC = 0.1;
+const PROB_CAM_DST = 0.2;
 
 (async () => {
   const ac = new AudioContext();
@@ -43,9 +46,9 @@ const BLUR = 0;
     new URL('./fragment.glsl', import.meta.url).href
   );
 
-  const srcImages = await Promise.all(
-    [...Array(9).keys()].map((i) => loadImage(`/images/${i}.jpg`))
-  );
+  console.log('fetching...');
+  const srcImages = await Promise.all(srcs.map((src) => loadImage(src)));
+  console.log('cropping...');
   const dstIDs = srcImages.map((img) => cropAndBlur(img, width, height, BLUR));
 
   addTexture(gl, 0, gl.getUniformLocation(program, 'u_image_0'));
@@ -62,14 +65,14 @@ const BLUR = 0;
     if (step % MAX_STEP === 0) {
       srcCurrentStream = { ...srcNextStream };
       srcNextStream =
-        Math.random() < 0.5
-          ? { kind: 'image', index: ~~(Math.random() * srcImages.length) }
-          : { kind: 'webcam' };
+        Math.random() < PROB_CAM_SRC
+          ? { kind: 'webcam' }
+          : { kind: 'image', index: ~~(Math.random() * srcImages.length) };
       dstCurrentStream = { ...dstNextStream };
       dstNextStream =
-        Math.random() < 0.5
-          ? { kind: 'image', index: ~~(Math.random() * dstIDs.length) }
-          : { kind: 'webcam' };
+        Math.random() < PROB_CAM_DST
+          ? { kind: 'webcam' }
+          : { kind: 'image', index: ~~(Math.random() * dstIDs.length) };
 
       if (srcCurrentStream.kind === 'image')
         setTextureImage(gl, 0, srcImages[srcCurrentStream.index]);
@@ -111,7 +114,7 @@ const BLUR = 0;
     );
     gl.uniform1f(
       gl.getUniformLocation(program, 'u_mix_dst'),
-      (step % MAX_STEP) / MAX_STEP
+      ((step % MAX_STEP) / MAX_STEP) ** 5
     );
 
     // draw and loop
