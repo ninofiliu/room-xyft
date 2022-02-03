@@ -8,7 +8,6 @@ uniform sampler2D u_offsets_1;
 uniform float u_mix_dst;
 uniform vec2 u_offset;
 uniform float u_force;
-uniform float u_time;
 in vec2 v_position;
 out vec4 color;
   
@@ -23,7 +22,7 @@ void main() {
     u_mix_dst
   );
   vec2 offset = vec2(
-    p.r - u_offset.x + u_time * 0.1,
+    p.r - u_offset.x,
     p.b + u_offset.y
   );
   vec2 tt = mod(t + u_force * offset, 1.0);

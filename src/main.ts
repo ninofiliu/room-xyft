@@ -65,7 +65,6 @@ const getMaxFreq = (fft: Uint8Array) => {
   addTexture(gl, 2, gl.getUniformLocation(program, 'u_offsets_0'));
   addTexture(gl, 3, gl.getUniformLocation(program, 'u_offsets_1'));
 
-  let step = 0;
   let srcStep = 0;
   let srcImage0 = srcImages[~~(Math.random() * srcImages.length)];
   let srcImage1 = srcImages[~~(Math.random() * srcImages.length)];
@@ -105,7 +104,6 @@ const getMaxFreq = (fft: Uint8Array) => {
       Math.sin(0.1 * fftVolume)
     );
     gl.uniform1f(gl.getUniformLocation(program, 'u_force'), FORCE);
-    gl.uniform1f(gl.getUniformLocation(program, 'u_time'), step / 60);
 
     if (srcStep === 0) setNewSrc();
     const srcMix = srcStep / MAX_SRC_STEP;
@@ -118,8 +116,6 @@ const getMaxFreq = (fft: Uint8Array) => {
     dstStep = (dstStep + 1) % MAX_DST_STEP;
 
     gl.drawArrays(gl.TRIANGLES, 0, 6);
-    step++;
-
     requestAnimationFrame(animate);
   };
   animate();
