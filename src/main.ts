@@ -1,36 +1,23 @@
-import { getBpm, getKickProgression } from './bpm';
 import getSource from './getSource';
 import { cropAndBlur, loadImage } from './img';
 
 import { addTexture, setTextureImage, webglSetup } from './webgl';
 
+type Stream = { kind: 'image'; index: number } | { kind: 'webcam' };
+
 const FFT_SIZE = 512;
 const FFT_SMOOTHING_CONSTANT = 0.95;
-const MAX_SRC_STEP = 1000;
-const MAX_DST_STEP = 600;
+const MAX_STEP = 1000;
 const FORCE = 1.5;
-
-const getMaxFreq = (fft: Uint8Array) => {
-  let maxI = 0;
-  let maxFreq = fft[0];
-  for (let i = 1; i < fft.length; i++) {
-    if (fft[i] > maxFreq) {
-      maxI = i;
-      maxFreq = fft[i];
-    }
-  }
-  return maxI / fft.length;
-};
+const BLUR = 0;
 
 (async () => {
-  const blur = 0;
-
   const ac = new AudioContext();
   const source = await getSource(ac, null);
-  const video = document.createElement('video');
-  video.autoplay = true;
-  video.muted = true;
-  video.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
+  const webcam = document.createElement('video');
+  webcam.autoplay = true;
+  webcam.muted = true;
+  webcam.srcObject = await navigator.mediaDevices.getUserMedia({ video: true });
 
   const analyser = ac.createAnalyser();
   analyser.fftSize = FFT_SIZE;
@@ -47,6 +34,7 @@ const getMaxFreq = (fft: Uint8Array) => {
   document.body.style.overflow = 'hidden';
   document.body.style.margin = '0';
   document.body.style.transform = 'scaleX(-1)';
+  document.body.style.imageRendering = 'pixelated';
   document.body.append(canvas);
 
   const { gl, program } = await webglSetup(
@@ -58,63 +46,75 @@ const getMaxFreq = (fft: Uint8Array) => {
   const srcImages = await Promise.all(
     [...Array(9).keys()].map((i) => loadImage(`/images/${i}.jpg`))
   );
-  const dstIDs = srcImages.map((img) => cropAndBlur(img, width, height, blur));
+  const dstIDs = srcImages.map((img) => cropAndBlur(img, width, height, BLUR));
 
   addTexture(gl, 0, gl.getUniformLocation(program, 'u_image_0'));
   addTexture(gl, 1, gl.getUniformLocation(program, 'u_image_1'));
   addTexture(gl, 2, gl.getUniformLocation(program, 'u_offsets_0'));
   addTexture(gl, 3, gl.getUniformLocation(program, 'u_offsets_1'));
 
-  let srcStep = 0;
-  let srcImage0 = srcImages[~~(Math.random() * srcImages.length)];
-  let srcImage1 = srcImages[~~(Math.random() * srcImages.length)];
-  let dstStep = 0;
-  let dstID0 = dstIDs[~~(Math.random() * dstIDs.length)];
-  let dstID1 = dstIDs[~~(Math.random() * dstIDs.length)];
+  let step: number = 0;
+  let srcCurrentStream: Stream;
+  let srcNextStream: Stream = { kind: 'webcam' };
+  let dstCurrentStream: Stream;
+  let dstNextStream: Stream = { kind: 'webcam' };
+  const updateStreams = () => {
+    if (step % MAX_STEP === 0) {
+      srcCurrentStream = { ...srcNextStream };
+      srcNextStream =
+        Math.random() < 0.5
+          ? { kind: 'image', index: ~~(Math.random() * srcImages.length) }
+          : { kind: 'webcam' };
+      dstCurrentStream = { ...dstNextStream };
+      dstNextStream =
+        Math.random() < 0.5
+          ? { kind: 'image', index: ~~(Math.random() * dstIDs.length) }
+          : { kind: 'webcam' };
 
-  const setNewSrc = () => {
-    srcImage0 = srcImage1;
-    srcImage1 = srcImages[~~(Math.random() * srcImages.length)];
-    setTextureImage(gl, 0, srcImage0);
-    setTextureImage(gl, 1, srcImage1);
-  };
+      if (srcCurrentStream.kind === 'image')
+        setTextureImage(gl, 0, srcImages[srcCurrentStream.index]);
+      if (srcNextStream.kind === 'image')
+        setTextureImage(gl, 1, srcImages[srcNextStream.index]);
+      if (dstCurrentStream.kind === 'image')
+        setTextureImage(gl, 2, dstIDs[dstCurrentStream.index]);
+      if (dstNextStream.kind === 'image')
+        setTextureImage(gl, 3, dstIDs[dstNextStream.index]);
+    }
 
-  const setNewDst = () => {
-    dstID0 = dstID1;
-    dstID1 = dstIDs[~~(Math.random() * dstIDs.length)];
-    setTextureImage(gl, 2, dstID0);
-    setTextureImage(gl, 3, dstID1);
+    if (srcCurrentStream.kind === 'webcam') setTextureImage(gl, 0, webcam);
+    if (srcNextStream.kind === 'webcam') setTextureImage(gl, 1, webcam);
+    if (dstCurrentStream.kind === 'webcam') setTextureImage(gl, 2, webcam);
+    if (dstNextStream.kind === 'webcam') setTextureImage(gl, 3, webcam);
+
+    step++;
   };
 
   const animate = () => {
+    // sounds
     analyser.getByteFrequencyData(fft);
     analyser.getByteTimeDomainData(wave);
-    const volume = wave.reduce(
-      (sum, e) => sum + Math.abs((e - 128) / 128) ** 2,
-      0
-    );
     const fftVolume = fft.reduce((sum, e) => sum + (e / 256) ** 2, 0);
-    const kp = getKickProgression();
-    const bpm = getBpm();
-    const maxFreq = getMaxFreq(fft);
 
+    // update streams
+    updateStreams();
+
+    // webgl parametrization
     gl.uniform2f(
       gl.getUniformLocation(program, 'u_offset'),
       Math.cos(0.1 * fftVolume),
       Math.sin(0.1 * fftVolume)
     );
     gl.uniform1f(gl.getUniformLocation(program, 'u_force'), FORCE);
+    gl.uniform1f(
+      gl.getUniformLocation(program, 'u_mix_src'),
+      (step % MAX_STEP) / MAX_STEP
+    );
+    gl.uniform1f(
+      gl.getUniformLocation(program, 'u_mix_dst'),
+      (step % MAX_STEP) / MAX_STEP
+    );
 
-    if (srcStep === 0) setNewSrc();
-    const srcMix = srcStep / MAX_SRC_STEP;
-    gl.uniform1f(gl.getUniformLocation(program, 'u_mix_src'), srcMix);
-    srcStep = (srcStep + 1) % MAX_SRC_STEP;
-
-    if (dstStep === 0) setNewDst();
-    const dstMix = dstStep / MAX_DST_STEP;
-    gl.uniform1f(gl.getUniformLocation(program, 'u_mix_dst'), dstMix);
-    dstStep = (dstStep + 1) % MAX_DST_STEP;
-
+    // draw and loop
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     requestAnimationFrame(animate);
   };
